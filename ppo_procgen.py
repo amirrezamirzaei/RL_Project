@@ -15,6 +15,8 @@ from torch.distributions.categorical import Categorical
 from torch.utils.tensorboard import SummaryWriter
 from transformers import CLIPProcessor, CLIPModel
 
+from agents import AgentClip, AgentClipOnly, AgentNormal
+
 def parse_args():
     # fmt: off
     parser = argparse.ArgumentParser()
@@ -26,8 +28,8 @@ def parse_args():
         help="if toggled, `torch.backends.cudnn.deterministic=False`")
     parser.add_argument("--cuda", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
         help="if toggled, cuda will be enabled by default")
-    parser.add_argument("--clip", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
-        help="whether or not to use clip model")
+    parser.add_argument("--agent", type=str, default='normal', required=True,
+        help="what agent to use")
 
     # Algorithm specific arguments
     parser.add_argument("--env-id", type=str, default="starpilot",
@@ -71,112 +73,9 @@ def parse_args():
     return args
 
 
-def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
-    torch.nn.init.orthogonal_(layer.weight, std)
-    torch.nn.init.constant_(layer.bias, bias_const)
-    return layer
-
-
-# taken from https://github.com/AIcrowd/neurips2020-procgen-starter-kit/blob/142d09586d2272a17f44481a115c4bd817cf6a94/models/impala_cnn_torch.py
-class ResidualBlock(nn.Module):
-    def __init__(self, channels):
-        super().__init__()
-        self.conv0 = nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size=3, padding=1)
-        self.conv1 = nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size=3, padding=1)
-
-    def forward(self, x):
-        inputs = x
-        x = nn.functional.relu(x)
-        x = self.conv0(x)
-        x = nn.functional.relu(x)
-        x = self.conv1(x)
-        return x + inputs
-
-
-class ConvSequence(nn.Module):
-    def __init__(self, input_shape, out_channels):
-        super().__init__()
-        self._input_shape = input_shape
-        self._out_channels = out_channels
-        self.conv = nn.Conv2d(in_channels=self._input_shape[0], out_channels=self._out_channels, kernel_size=3, padding=1)
-        self.res_block0 = ResidualBlock(self._out_channels)
-        self.res_block1 = ResidualBlock(self._out_channels)
-
-    def forward(self, x):
-        x = self.conv(x)
-        x = nn.functional.max_pool2d(x, kernel_size=3, stride=2, padding=1)
-        x = self.res_block0(x)
-        x = self.res_block1(x)
-        assert x.shape[1:] == self.get_output_shape()
-        return x
-
-    def get_output_shape(self):
-        _c, h, w = self._input_shape
-        return (self._out_channels, (h + 1) // 2, (w + 1) // 2)
-
-
-class Agent(nn.Module):
-    def __init__(self, envs):
-        super().__init__()
-        h, w, c = envs.single_observation_space.shape
-        shape = (c, h, w)
-        conv_seqs = []
-        for out_channels in [16, 32, 32]:
-            conv_seq = ConvSequence(shape, out_channels)
-            shape = conv_seq.get_output_shape()
-            conv_seqs.append(conv_seq)
-        conv_seqs += [
-            nn.Flatten(),
-            nn.ReLU(),
-            nn.Linear(in_features=shape[0] * shape[1] * shape[2], out_features=256),
-            nn.ReLU(),
-        ]
-        self.network = nn.Sequential(*conv_seqs)
-        self.actor = layer_init(nn.Linear(512, envs.single_action_space.n), std=0.01)
-        self.critic = layer_init(nn.Linear(512, 1), std=1)
-
-        self.clip_network = nn.Sequential(
-            nn.Linear(1024,256),
-            nn.ReLU(),
-            nn.Linear(256,256),
-            nn.ReLU()
-        )
-
-    def get_value(self, x, clip_model=None, clip_processor=None):
-        with torch.no_grad():
-            inputs = clip_processor(text=["a maze with the white square near the yellow square."], images=x, return_tensors="pt", padding=True).to('cuda')
-            outputs = clip_model(**inputs)
-            img_embeds = outputs.image_embeds # batch_size * 512
-            text_embeds = outputs.text_embeds.repeat(img_embeds.shape[0],1) # batch_size * 512
-
-        embed_clip = torch.cat((img_embeds, text_embeds), dim=1)
-        embed_clip = self.clip_network(embed_clip)
-        hidden = self.network(x.permute((0, 3, 1, 2)) / 255.0)  # "bhwc" -> "bchw" batch_size * 256
-        hidden = torch.cat((hidden, embed_clip), dim=1)
-        return self.critic(hidden)  # "bhwc" -> "bchw"
-
-    def get_action_and_value(self, x, action=None, clip_model=None, clip_processor=None):
-        with torch.no_grad():
-            inputs = clip_processor(text=["a maze with the white square near the yellow square."], images=x, return_tensors="pt", padding=True).to('cuda')
-            outputs = clip_model(**inputs)
-            img_embeds = outputs.image_embeds # batch_size * 512
-            text_embeds = outputs.text_embeds.repeat(img_embeds.shape[0],1) # batch_size * 512
-
-        embed_clip = torch.cat((img_embeds, text_embeds), dim=1)
-        embed_clip = self.clip_network(embed_clip)
-        hidden = self.network(x.permute((0, 3, 1, 2)) / 255.0)  # "bhwc" -> "bchw" batch_size * 256
-        hidden = torch.cat((hidden, embed_clip), dim=1)
-      
-        logits = self.actor(hidden)
-        probs = Categorical(logits=logits)
-        if action is None:
-            action = probs.sample()
-        return action, probs.log_prob(action), probs.entropy(), self.critic(hidden)
-
-
 if __name__ == "__main__":
     args = parse_args()
-    run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
+    run_name = f"{args.env_id}__{args.exp_name}_{args.agent}_{args.seed}__{int(time.time())}"
     
     writer = SummaryWriter(f"runs/{run_name}")
     writer.add_text(
@@ -191,11 +90,6 @@ if __name__ == "__main__":
     torch.backends.cudnn.deterministic = args.torch_deterministic
 
     device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
-
-    clip_model, clip_processor = None, None
-    if args.clip:
-        clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to(device)
-        clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
 
     assert torch.cuda.is_available()
     # env setup
@@ -219,8 +113,29 @@ if __name__ == "__main__":
     envs_test = gym.wrappers.NormalizeReward(envs_test, gamma=args.gamma)
     envs_test = gym.wrappers.TransformReward(envs_test, lambda reward: np.clip(reward, -10, 10))
     assert isinstance(envs_test.single_action_space, gym.spaces.Discrete), "only discrete action space is supported"
+    
+    if args.agent=='normal':
+        agent = AgentNormal(envs).to(device)
 
-    agent = Agent(envs).to(device)
+    elif args.agent=='clip':
+        clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to(device)
+        for param in clip_model.parameters():
+            param.requires_grad = False
+        clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+        agent = AgentClip(envs, clip_model, clip_processor).to(device)
+
+    elif args.agent=='cliponly':
+        clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to(device)
+        for param in clip_model.parameters():
+            param.requires_grad = False
+        clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+        agent = AgentClipOnly(envs, clip_model, clip_processor).to(device)
+    
+    elif args.agent=='clip_dropout':
+        raise NotImplementedError
+    else:
+        raise NotImplementedError
+
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
 
     # ALGO Logic: Storage setup
@@ -263,7 +178,7 @@ if __name__ == "__main__":
 
             # ALGO LOGIC: action logic
             with torch.no_grad():
-                action, logprob, _, value = agent.get_action_and_value(next_obs, clip_model=clip_model, clip_processor=clip_processor)
+                action, logprob, _, value = agent.get_action_and_value(next_obs)
                 values[step] = value.flatten()
             actions[step] = action
             logprobs[step] = logprob
@@ -274,7 +189,7 @@ if __name__ == "__main__":
             next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(done).to(device)
         
             for item in info:
-                if global_step-last_update>5e6:
+                if global_step-last_update>2.5e6:
                     last_update = global_step
                     torch.save(agent.state_dict(), f'weights{global_step}_{args.env_id}.pt')
                 if "episode" in item.keys():
@@ -289,7 +204,7 @@ if __name__ == "__main__":
 
             # ALGO LOGIC: action logic
             with torch.no_grad():
-                action, logprob, _, value = agent.get_action_and_value(next_obs_test, clip_model=clip_model, clip_processor=clip_processor)
+                action, logprob, _, value = agent.get_action_and_value(next_obs_test)
                 values_test[step] = value.flatten()
             actions_test[step] = action
             logprobs_test[step] = logprob
@@ -308,7 +223,7 @@ if __name__ == "__main__":
 
         # bootstrap value if not done
         with torch.no_grad():
-            next_value = agent.get_value(next_obs, clip_model=clip_model, clip_processor=clip_processor).reshape(1, -1)
+            next_value = agent.get_value(next_obs).reshape(1, -1)
             advantages = torch.zeros_like(rewards).to(device)
             lastgaelam = 0
             for t in reversed(range(args.num_steps)):
@@ -339,7 +254,7 @@ if __name__ == "__main__":
                 end = start + args.minibatch_size
                 mb_inds = b_inds[start:end]
 
-                _, newlogprob, entropy, newvalue = agent.get_action_and_value(b_obs[mb_inds], b_actions.long()[mb_inds], clip_model=clip_model, clip_processor=clip_processor)
+                _, newlogprob, entropy, newvalue = agent.get_action_and_value(b_obs[mb_inds], b_actions.long()[mb_inds])
                 logratio = newlogprob - b_logprobs[mb_inds]
                 ratio = logratio.exp()
 
