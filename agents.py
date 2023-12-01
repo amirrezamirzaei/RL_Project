@@ -186,3 +186,54 @@ class AgentClipOnly(nn.Module):
         if action is None:
             action = probs.sample()
         return action, probs.log_prob(action), probs.entropy(), self.critic(hidden)
+    
+
+class AgentClipDropout(nn.Module):
+    def __init__(self, envs, clip_model, clip_processor):
+        super().__init__()
+        self.clip_model = clip_model
+        self.clip_processor = clip_processor
+        
+        self.actor = layer_init(nn.Linear(256, envs.single_action_space.n), std=0.01)
+        self.critic = layer_init(nn.Linear(256, 1), std=1)
+
+        self.network = nn.Sequential(
+            nn.Dropout(p=0.5),
+            nn.Linear(1024,512),
+            nn.ReLU(),
+            nn.Linear(512,512),
+            nn.ReLU(),
+            nn.Linear(512,256),
+            nn.ReLU(),
+        )
+
+    def get_value(self, x):
+        with torch.no_grad():
+            inputs = self.clip_processor(text=["a maze with the white square near the yellow square."], images=x, return_tensors="pt", padding=True).to('cuda')
+            outputs = self.clip_model(**inputs)
+            img_embeds = outputs.image_embeds # batch_size * 512
+            text_embeds = outputs.text_embeds.repeat(img_embeds.shape[0],1) # batch_size * 512
+
+        embed_clip = torch.cat((img_embeds, text_embeds), dim=1)
+        embed_clip = self.clip_network(embed_clip)
+        hidden = self.network(x.permute((0, 3, 1, 2)) / 255.0)  # "bhwc" -> "bchw" batch_size * 256
+        hidden = torch.cat((hidden, embed_clip), dim=1)
+        return self.critic(hidden)  # "bhwc" -> "bchw"
+
+    def get_action_and_value(self, x, action=None):
+        with torch.no_grad():
+            inputs = self.clip_processor(text=["a maze with the white square near the yellow square."], images=x, return_tensors="pt", padding=True).to('cuda')
+            outputs = self.clip_model(**inputs)
+            img_embeds = outputs.image_embeds # batch_size * 512
+            text_embeds = outputs.text_embeds.repeat(img_embeds.shape[0],1) # batch_size * 512
+
+        embed_clip = torch.cat((img_embeds, text_embeds), dim=1)
+        embed_clip = self.clip_network(embed_clip)
+        hidden = self.network(x.permute((0, 3, 1, 2)) / 255.0)  # "bhwc" -> "bchw" batch_size * 256
+        hidden = torch.cat((hidden, embed_clip), dim=1)
+      
+        logits = self.actor(hidden)
+        probs = Categorical(logits=logits)
+        if action is None:
+            action = probs.sample()
+        return action, probs.log_prob(action), probs.entropy(), self.critic(hidden)

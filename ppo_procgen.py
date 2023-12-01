@@ -14,8 +14,9 @@ from procgen import ProcgenEnv
 from torch.distributions.categorical import Categorical
 from torch.utils.tensorboard import SummaryWriter
 from transformers import CLIPProcessor, CLIPModel
+import debugpy
 
-from agents import AgentClip, AgentClipOnly, AgentNormal
+from agents import AgentClip, AgentClipOnly, AgentClipDropout, AgentNormal
 
 def parse_args():
     # fmt: off
@@ -74,6 +75,10 @@ def parse_args():
 
 
 if __name__ == "__main__":
+
+    # debugpy.listen(5678)  # Listen on port 5678 for debugger to attach
+    # debugpy.wait_for_client()  # Pause execution until debugger attaches
+
     args = parse_args()
     run_name = f"{args.env_id}__{args.exp_name}_{args.agent}_{args.seed}__{int(time.time())}"
     
@@ -131,8 +136,12 @@ if __name__ == "__main__":
         clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
         agent = AgentClipOnly(envs, clip_model, clip_processor).to(device)
     
-    elif args.agent=='clip_dropout':
-        raise NotImplementedError
+    elif args.agent=='clip-dropout':
+        clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to(device)
+        for param in clip_model.parameters():
+            param.requires_grad = False
+        clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+        agent = AgentClipDropout(envs, clip_model, clip_processor).to(device)
     else:
         raise NotImplementedError
 
@@ -319,7 +328,7 @@ if __name__ == "__main__":
     envs.close()
     envs_test.close()
     writer.close()
-    torch.save(agent.state_dict(), f'weightsv2{global_step}_{args.env_id}.pt')
+    torch.save(agent.state_dict(), f'weightsv2{global_step}_{args.env_id}_{args.agent}.pt')
     # 11:03
 
     
