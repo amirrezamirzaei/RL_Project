@@ -193,17 +193,28 @@ class AgentClipDropout(nn.Module):
         super().__init__()
         self.clip_model = clip_model
         self.clip_processor = clip_processor
-        
-        self.actor = layer_init(nn.Linear(256, envs.single_action_space.n), std=0.01)
-        self.critic = layer_init(nn.Linear(256, 1), std=1)
-
-        self.network = nn.Sequential(
+        h, w, c = envs.single_observation_space.shape
+        shape = (c, h, w)
+        conv_seqs = []
+        for out_channels in [16, 32, 32]:
+            conv_seq = ConvSequence(shape, out_channels)
+            shape = conv_seq.get_output_shape()
+            conv_seqs.append(conv_seq)
+        conv_seqs += [
             nn.Dropout(p=0.5),
-            nn.Linear(1024,512),
+            nn.Flatten(),
             nn.ReLU(),
-            nn.Linear(512,512),
+            nn.Linear(in_features=shape[0] * shape[1] * shape[2], out_features=256),
             nn.ReLU(),
-            nn.Linear(512,256),
+        ]
+        self.network = nn.Sequential(*conv_seqs)
+        self.actor = layer_init(nn.Linear(512, envs.single_action_space.n), std=0.01)
+        self.critic = layer_init(nn.Linear(512, 1), std=1)
+
+        self.clip_network = nn.Sequential(
+            nn.Linear(1024,256),
+            nn.ReLU(),
+            nn.Linear(256,256),
             nn.ReLU()
         )
 
