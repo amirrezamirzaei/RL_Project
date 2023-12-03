@@ -204,7 +204,7 @@ class AgentClipDropout(nn.Module):
             nn.Linear(512,512),
             nn.ReLU(),
             nn.Linear(512,256),
-            nn.ReLU(),
+            nn.ReLU()
         )
 
     def get_value(self, x):
