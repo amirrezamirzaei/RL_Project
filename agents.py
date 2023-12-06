@@ -228,7 +228,7 @@ class AgentClipDropout(nn.Module):
         embed_clip = self.clip_network(embed_clip)
         
         if random.random() < 0.5:
-            hidden = self.network(torch.zeros(x.permute((0, 3, 1, 2)).shape, device=‘cuda’))
+            hidden = self.network(torch.zeros(x.permute((0, 3, 1, 2)).shape, device='cuda'))
         else:
             hidden = self.network(x.permute((0, 3, 1, 2)) / 255.0)  # "bhwc" -> "bchw" batch_size * 256
 
@@ -244,9 +244,9 @@ class AgentClipDropout(nn.Module):
 
         embed_clip = torch.cat((img_embeds, text_embeds), dim=1)
         embed_clip = self.clip_network(embed_clip)
-        
+
         if random.random() < 0.5:
-            hidden = self.network(torch.zeros(x.permute((0, 3, 1, 2)).shape, device=‘cuda’))
+            hidden = self.network(torch.zeros(x.permute((0, 3, 1, 2)).shape, device='cuda'))
         else:
             hidden = self.network(x.permute((0, 3, 1, 2)) / 255.0)  # "bhwc" -> "bchw" batch_size * 256
 
