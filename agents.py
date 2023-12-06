@@ -201,7 +201,6 @@ class AgentClipDropout(nn.Module):
             shape = conv_seq.get_output_shape()
             conv_seqs.append(conv_seq)
         conv_seqs += [
-            nn.Dropout(p=0.5),
             nn.Flatten(),
             nn.ReLU(),
             nn.Linear(in_features=shape[0] * shape[1] * shape[2], out_features=256),
@@ -227,7 +226,12 @@ class AgentClipDropout(nn.Module):
 
         embed_clip = torch.cat((img_embeds, text_embeds), dim=1)
         embed_clip = self.clip_network(embed_clip)
-        hidden = self.network(x.permute((0, 3, 1, 2)) / 255.0)  # "bhwc" -> "bchw" batch_size * 256
+        
+        if random.random() < 0.5:
+            hidden = self.network(torch.zeros(x.permute((0, 3, 1, 2)).shape, device=‘cuda’))
+        else:
+            hidden = self.network(x.permute((0, 3, 1, 2)) / 255.0)  # "bhwc" -> "bchw" batch_size * 256
+
         hidden = torch.cat((hidden, embed_clip), dim=1)
         return self.critic(hidden)  # "bhwc" -> "bchw"
 
@@ -240,7 +244,12 @@ class AgentClipDropout(nn.Module):
 
         embed_clip = torch.cat((img_embeds, text_embeds), dim=1)
         embed_clip = self.clip_network(embed_clip)
-        hidden = self.network(x.permute((0, 3, 1, 2)) / 255.0)  # "bhwc" -> "bchw" batch_size * 256
+        
+        if random.random() < 0.5:
+            hidden = self.network(torch.zeros(x.permute((0, 3, 1, 2)).shape, device=‘cuda’))
+        else:
+            hidden = self.network(x.permute((0, 3, 1, 2)) / 255.0)  # "bhwc" -> "bchw" batch_size * 256
+
         hidden = torch.cat((hidden, embed_clip), dim=1)
       
         logits = self.actor(hidden)
