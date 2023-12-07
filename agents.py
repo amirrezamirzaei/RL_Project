@@ -52,10 +52,11 @@ class ConvSequence(nn.Module):
 
 
 class AgentClip(nn.Module):
-    def __init__(self, envs, clip_model, clip_processor):
+    def __init__(self, envs, clip_model, clip_processor, text):
         super().__init__()
         self.clip_model = clip_model
         self.clip_processor = clip_processor
+        self.text = text
         h, w, c = envs.single_observation_space.shape
         shape = (c, h, w)
         conv_seqs = []
@@ -82,7 +83,7 @@ class AgentClip(nn.Module):
 
     def get_value(self, x):
         with torch.no_grad():
-            inputs = self.clip_processor(text=["a maze with the white square near the yellow square."], images=x, return_tensors="pt", padding=True).to('cuda')
+            inputs = self.clip_processor(text=[self.text], images=x, return_tensors="pt", padding=True).to('cuda')
             outputs = self.clip_model(**inputs)
             img_embeds = outputs.image_embeds # batch_size * 512
             text_embeds = outputs.text_embeds.repeat(img_embeds.shape[0],1) # batch_size * 512
@@ -95,7 +96,7 @@ class AgentClip(nn.Module):
 
     def get_action_and_value(self, x, action=None):
         with torch.no_grad():
-            inputs = self.clip_processor(text=["a maze with the white square near the yellow square."], images=x, return_tensors="pt", padding=True).to('cuda')
+            inputs = self.clip_processor(text=[self.text], images=x, return_tensors="pt", padding=True).to('cuda')
             outputs = self.clip_model(**inputs)
             img_embeds = outputs.image_embeds # batch_size * 512
             text_embeds = outputs.text_embeds.repeat(img_embeds.shape[0],1) # batch_size * 512
@@ -143,10 +144,11 @@ class AgentNormal(nn.Module):
         return action, probs.log_prob(action), probs.entropy(), self.critic(hidden)
 
 class AgentClipOnly(nn.Module):
-    def __init__(self, envs, clip_model, clip_processor):
+    def __init__(self, envs, clip_model, clip_processor, text):
         super().__init__()
         self.clip_model = clip_model
         self.clip_processor = clip_processor
+        self.text = text
         
         self.actor = layer_init(nn.Linear(256, envs.single_action_space.n), std=0.01)
         self.critic = layer_init(nn.Linear(256, 1), std=1)
@@ -162,7 +164,7 @@ class AgentClipOnly(nn.Module):
 
     def get_value(self, x):
         with torch.no_grad():
-            inputs = self.clip_processor(text=["a maze with the white square near the yellow square."], images=x, return_tensors="pt", padding=True).to('cuda')
+            inputs = self.clip_processor(text=[self.text], images=x, return_tensors="pt", padding=True).to('cuda')
             outputs = self.clip_model(**inputs)
             img_embeds = outputs.image_embeds # batch_size * 512
             text_embeds = outputs.text_embeds.repeat(img_embeds.shape[0],1) # batch_size * 512
@@ -173,7 +175,7 @@ class AgentClipOnly(nn.Module):
 
     def get_action_and_value(self, x, action=None):
         with torch.no_grad():
-            inputs = self.clip_processor(text=["a maze with the white square near the yellow square."], images=x, return_tensors="pt", padding=True).to('cuda')
+            inputs = self.clip_processor(text=[self.text], images=x, return_tensors="pt", padding=True).to('cuda')
             outputs = self.clip_model(**inputs)
             img_embeds = outputs.image_embeds # batch_size * 512
             text_embeds = outputs.text_embeds.repeat(img_embeds.shape[0],1) # batch_size * 512
@@ -189,10 +191,12 @@ class AgentClipOnly(nn.Module):
     
 
 class AgentClipDropout(nn.Module):
-    def __init__(self, envs, clip_model, clip_processor):
+    def __init__(self, envs, clip_model, clip_processor, text):
         super().__init__()
         self.clip_model = clip_model
         self.clip_processor = clip_processor
+        self.text = text
+
         h, w, c = envs.single_observation_space.shape
         shape = (c, h, w)
         conv_seqs = []
@@ -219,7 +223,7 @@ class AgentClipDropout(nn.Module):
 
     def get_value(self, x):
         with torch.no_grad():
-            inputs = self.clip_processor(text=["a maze with the white square near the yellow square."], images=x, return_tensors="pt", padding=True).to('cuda')
+            inputs = self.clip_processor(text=[self.text], images=x, return_tensors="pt", padding=True).to('cuda')
             outputs = self.clip_model(**inputs)
             img_embeds = outputs.image_embeds # batch_size * 512
             text_embeds = outputs.text_embeds.repeat(img_embeds.shape[0],1) # batch_size * 512
@@ -237,7 +241,7 @@ class AgentClipDropout(nn.Module):
 
     def get_action_and_value(self, x, action=None):
         with torch.no_grad():
-            inputs = self.clip_processor(text=["a maze with the white square near the yellow square."], images=x, return_tensors="pt", padding=True).to('cuda')
+            inputs = self.clip_processor(text=[self.text], images=x, return_tensors="pt", padding=True).to('cuda')
             outputs = self.clip_model(**inputs)
             img_embeds = outputs.image_embeds # batch_size * 512
             text_embeds = outputs.text_embeds.repeat(img_embeds.shape[0],1) # batch_size * 512

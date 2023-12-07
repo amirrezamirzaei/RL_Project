@@ -128,21 +128,21 @@ if __name__ == "__main__":
         for param in clip_model.parameters():
             param.requires_grad = False
         clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
-        agent = AgentClip(envs, clip_model, clip_processor).to(device)
+        agent = AgentClip(envs, clip_model, clip_processor, "a maze with the white square near the yellow square.").to(device)
 
     elif args.agent=='cliponly':
         clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to(device)
         for param in clip_model.parameters():
             param.requires_grad = False
         clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
-        agent = AgentClipOnly(envs, clip_model, clip_processor).to(device)
+        agent = AgentClipOnly(envs, clip_model, clip_processor, "a maze with the white square near the yellow square.").to(device)
     
     elif args.agent=='clip-dropout':
         clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to(device)
         for param in clip_model.parameters():
             param.requires_grad = False
         clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
-        agent = AgentClipDropout(envs, clip_model, clip_processor).to(device)
+        agent = AgentClipDropout(envs, clip_model, clip_processor, "a maze with the white square near the yellow square.").to(device)
     else:
         raise NotImplementedError
 
